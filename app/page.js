@@ -9,11 +9,12 @@ function AppContent() {
   const [tgUser, setTgUser] = useState(null);
   const [matches, setMatches] = useState([]);
   const [userScore, setUserScore] = useState(0);
-  
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [betAmount, setBetAmount] = useState(10);
-  // 新增：记录用户当前选中了哪个队伍
   const [pickedTeam, setPickedTeam] = useState(null);
+  
+  // 【新魔法】用来存放排行榜数据的数组
+  const [leaderboard, setLeaderboard] = useState([]);
 
   useEffect(() => {
     const initData = async () => {
@@ -43,23 +44,29 @@ function AppContent() {
          setUserScore(1000);
       }
 
+      // 获取比赛
       const { data: matchData } = await supabase.from('matches').select('*');
       if (matchData) setMatches(matchData);
+
+      // 【新魔法】获取全网积分最高的前 10 名用户
+      const { data: topUsers } = await supabase
+        .from('users')
+        .select('*')
+        .order('score', { ascending: false })
+        .limit(10);
+      if (topUsers) setLeaderboard(topUsers);
     };
     initData();
   }, []);
 
-  // 【核心升级】扣分 + 开收据的组合拳
   const handlePlaceBet = async () => {
     if (!pickedTeam) return alert("请先选择您要支持的队伍！");
     if (userScore < betAmount) return alert("积分不足！");
 
     const newScore = userScore - betAmount;
-    
-    // 1. 乐观更新画面
     setUserScore(newScore);
     const matchStr = `${selectedMatch.team_a} vs ${selectedMatch.team_b}`;
-    const savedTeam = pickedTeam; // 临时存一下，因为马上要清空弹窗了
+    const savedTeam = pickedTeam; 
     const savedAmount = betAmount;
     
     setSelectedMatch(null); 
@@ -67,11 +74,7 @@ function AppContent() {
 
     if (tgUser) {
       const tgId = tgUser.id.toString();
-      
-      // 2. 真实扣除数据库的钱
       const { error: updateError } = await supabase.from('users').update({ score: newScore }).eq('tg_id', tgId);
-      
-      // 3. 【新魔法】向数据库写入一张“收据”
       const { error: insertError } = await supabase.from('predictions').insert([{
         user_tg_id: tgId,
         match_name: matchStr,
@@ -80,7 +83,6 @@ function AppContent() {
       }]);
 
       if (updateError || insertError) {
-        // 让系统直接把底层的英文报错弹出来，方便我们抓虫
         alert("❌ 记账报错: " + (updateError?.message || "") + " | " + (insertError?.message || ""));
       } else {
         alert(`✅ 预测成功！您已投入 ${savedAmount} 积分支持【${savedTeam}】。收据已存入云端！`);
@@ -97,7 +99,8 @@ function AppContent() {
         </div>
       </header>
 
-      <div className="w-full bg-gradient-to-r from-gray-800 to-gray-800/50 p-5 rounded-2xl border border-gray-700 shadow-xl mb-6 flex justify-between items-center">
+      {/* 用户卡片 */}
+      <div className="w-full bg-gradient-to-r from-gray-800 to-gray-800/50 p-5 rounded-2xl border border-gray-700 shadow-xl mb-8 flex justify-between items-center">
          <div>
            <p className="text-gray-400 text-xs mb-1 tracking-wider">云端可用积分</p>
            <p className="text-2xl font-black text-yellow-400">
@@ -109,7 +112,8 @@ function AppContent() {
          </div>
       </div>
 
-      <div className="w-full flex-1">
+      {/* 比赛列表 */}
+      <div className="w-full flex-1 mb-10">
         <h2 className="font-bold mb-4 italic text-gray-400">🔥 预测赢大奖</h2>
         <div className="space-y-4">
           {matches.map((match) => (
@@ -126,39 +130,47 @@ function AppContent() {
         </div>
       </div>
 
+      {/* 【新魔法】炫酷排行榜 UI */}
+      <div className="w-full pb-10">
+        <h2 className="font-bold mb-4 italic text-gray-400">🏆 全网财富排行榜</h2>
+        <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-md">
+          {leaderboard.length === 0 ? (
+             <p className="p-4 text-center text-gray-500 text-sm">暂无数据，快来拿下榜一！</p>
+          ) : (
+             leaderboard.map((user, index) => (
+               <div key={user.id} className="flex justify-between items-center p-4 border-b border-gray-700/50 last:border-0 hover:bg-gray-700/30 transition-colors">
+                 <div className="flex items-center space-x-4">
+                   {/* 前三名给特殊颜色 */}
+                   <span className={`font-black w-6 text-center ${index === 0 ? 'text-yellow-400 text-xl' : index === 1 ? 'text-gray-300 text-lg' : index === 2 ? 'text-amber-600 text-lg' : 'text-gray-500'}`}>
+                     #{index + 1}
+                   </span>
+                   {/* 保护隐私，将 TG ID 中间几位打码 */}
+                   <span className="font-mono text-sm text-gray-300">
+                     {user.tg_id.substring(0, 3)}***{user.tg_id.slice(-3)}
+                   </span>
+                 </div>
+                 <span className="text-yellow-400 font-bold">{user.score}</span>
+               </div>
+             ))
+          )}
+        </div>
+      </div>
+
+      {/* 下注弹窗保持不变 */}
       {selectedMatch && (
         <div className="fixed inset-0 bg-black/80 flex flex-col justify-end z-50">
           <div className="flex-1" onClick={() => setSelectedMatch(null)}></div>
-          <div className="bg-gray-800 rounded-t-3xl p-8 border-t-2 border-yellow-500/50">
+          <div className="bg-gray-800 rounded-t-3xl p-8 border-t-2 border-yellow-500/50 shadow-2xl">
             <h3 className="text-xl font-bold text-center mb-4 text-gray-300">请选择支持队伍</h3>
-            
-            {/* 新增的二选一球队按钮 */}
             <div className="flex space-x-4 mb-6">
-              <button 
-                onClick={() => setPickedTeam(selectedMatch.team_a)}
-                className={`flex-1 py-3 rounded-xl font-bold transition-all ${pickedTeam === selectedMatch.team_a ? 'bg-blue-600 text-white border-2 border-blue-400' : 'bg-gray-700 text-gray-400 border-2 border-transparent'}`}>
-                {selectedMatch.team_a}
-              </button>
-              <button 
-                onClick={() => setPickedTeam(selectedMatch.team_b)}
-                className={`flex-1 py-3 rounded-xl font-bold transition-all ${pickedTeam === selectedMatch.team_b ? 'bg-red-600 text-white border-2 border-red-400' : 'bg-gray-700 text-gray-400 border-2 border-transparent'}`}>
-                {selectedMatch.team_b}
-              </button>
+              <button onClick={() => setPickedTeam(selectedMatch.team_a)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${pickedTeam === selectedMatch.team_a ? 'bg-blue-600 text-white border-2 border-blue-400' : 'bg-gray-700 text-gray-400 border-2 border-transparent'}`}>{selectedMatch.team_a}</button>
+              <button onClick={() => setPickedTeam(selectedMatch.team_b)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${pickedTeam === selectedMatch.team_b ? 'bg-red-600 text-white border-2 border-red-400' : 'bg-gray-700 text-gray-400 border-2 border-transparent'}`}>{selectedMatch.team_b}</button>
             </div>
-
             <div className="mb-8">
-              <div className="flex justify-between text-gray-400 mb-2">
-                <span>投入积分</span>
-                <span className="text-yellow-400 font-bold">{betAmount} $GOAL</span>
-              </div>
+              <div className="flex justify-between text-gray-400 mb-2"><span>投入积分</span><span className="text-yellow-400 font-bold">{betAmount} $GOAL</span></div>
               <input type="range" min="10" max="500" step="10" value={betAmount} onChange={(e) => setBetAmount(parseInt(e.target.value))} className="w-full accent-yellow-400"/>
             </div>
-            
-            <button 
-              onClick={handlePlaceBet} 
-              className={`w-full py-4 rounded-2xl font-black text-lg transition-all ${pickedTeam ? 'bg-yellow-400 text-black active:scale-95' : 'bg-gray-600 text-gray-400 cursor-not-allowed'}`}>
-              {pickedTeam ? `确认支持 ${pickedTeam}` : '请先选择队伍'}
-            </button>
+            <button onClick={handlePlaceBet} className={`w-full py-4 rounded-2xl font-black text-lg transition-all ${pickedTeam ? 'bg-yellow-400 text-black active:scale-95' : 'bg-gray-600 text-gray-400 cursor-not-allowed'}`}>{pickedTeam ? `确认支持 ${pickedTeam}` : '请先选择队伍'}</button>
           </div>
         </div>
       )}
@@ -170,7 +182,6 @@ export default function Home() {
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => setIsMounted(true), []);
   if (!isMounted) return null;
-
   return (
     <TonConnectUIProvider manifestUrl="https://ton-connect.github.io/demo-dapp-with-react-ui/tonconnect-manifest.json">
       <AppContent />
