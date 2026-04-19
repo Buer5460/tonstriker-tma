@@ -57,7 +57,7 @@ function AppContent() {
   const handleShare = () => {
     const shareText = "🔥 我正在 TONStriker 预测比赛赚取真金白银！胜率极高，快来和我一起瓜分巨额奖池！";
     // ⚠️ TODO: 等你发给我机器人的链接后，可以在这里把它换成真实的
-    const botUrl = "https://t.me/your_bot_name/app"; 
+    const botUrl = "https://t.me/TONStriker2026_bot"; 
     
     const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(botUrl)}&text=${encodeURIComponent(shareText)}`;
 
