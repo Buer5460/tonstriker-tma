@@ -2,18 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../utils/supabase'; 
-import { TonConnectUIProvider, TonConnectButton, useTonAddress } from '@tonconnect/ui-react';
+// 1. 【新增引入】从插件库中拿出真正的发钞机 useTonConnectUI
+import { TonConnectUIProvider, TonConnectButton, useTonAddress, useTonConnectUI } from '@tonconnect/ui-react';
 
 function AppContent() {
   const address = useTonAddress(); 
+  // 2. 【新增魔法】激活发钞机
+  const [tonConnectUI] = useTonConnectUI();
+  
   const [tgUser, setTgUser] = useState(null);
   const [matches, setMatches] = useState([]);
   const [userScore, setUserScore] = useState(0);
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [betAmount, setBetAmount] = useState(10);
   const [pickedTeam, setPickedTeam] = useState(null);
-  
-  // 【新魔法】用来存放排行榜数据的数组
   const [leaderboard, setLeaderboard] = useState([]);
 
   useEffect(() => {
@@ -44,49 +46,72 @@ function AppContent() {
          setUserScore(1000);
       }
 
-      // 获取比赛
       const { data: matchData } = await supabase.from('matches').select('*');
       if (matchData) setMatches(matchData);
 
-      // 【新魔法】获取全网积分最高的前 10 名用户
-      const { data: topUsers } = await supabase
-        .from('users')
-        .select('*')
-        .order('score', { ascending: false })
-        .limit(10);
+      const { data: topUsers } = await supabase.from('users').select('*').order('score', { ascending: false }).limit(10);
       if (topUsers) setLeaderboard(topUsers);
     };
     initData();
   }, []);
 
+  // 3. 【核心换血】接通真金白银的支付网关
   const handlePlaceBet = async () => {
     if (!pickedTeam) return alert("请先选择您要支持的队伍！");
-    if (userScore < betAmount) return alert("积分不足！");
+    // 如果没连钱包，直接拦住！
+    if (!address) return alert("❌ 请先在页面右上角连接 TON 钱包！");
 
-    const newScore = userScore - betAmount;
-    setUserScore(newScore);
-    const matchStr = `${selectedMatch.team_a} vs ${selectedMatch.team_b}`;
-    const savedTeam = pickedTeam; 
-    const savedAmount = betAmount;
-    
-    setSelectedMatch(null); 
-    setPickedTeam(null);
+    // 【安全锁】强制固定支付金额为 0.01 TON，转换成区块链识别的 nanoTON
+    const testAmountTON = 0.01;
+    const nanoTON = (testAmountTON * 1000000000).toString(); 
 
-    if (tgUser) {
-      const tgId = tgUser.id.toString();
-      const { error: updateError } = await supabase.from('users').update({ score: newScore }).eq('tg_id', tgId);
+    // 构建一份发给区块链的“真实付款账单”
+    const transaction = {
+      validUntil: Math.floor(Date.now() / 1000) + 360, // 账单 6 分钟内有效
+      messages: [
+        {
+          address: "UQD_BlGWjwMnVqb3jetXwKWy0aWMvNo-Bfm4XbGXQrpK0s7Y", // 你的庄家金库地址！
+          amount: nanoTON // 强制 0.01 TON
+        }
+      ]
+    };
+
+    try {
+      // ⚠️ 关键动作：屏幕底部会瞬间弹起用户的钱包，等待真实付款
+      await tonConnectUI.sendTransaction(transaction);
+
+      // ==========================================
+      // 只有当用户真的付了钱（交易上链），代码才会走到这里！
+      // ==========================================
+      
+      const matchStr = `${selectedMatch.team_a} vs ${selectedMatch.team_b}`;
+      const tgId = tgUser ? tgUser.id.toString() : 'WalletUser';
+
+      // 记账：为了不破坏咱们的排行榜，数据库里依然存他的虚拟积分
       const { error: insertError } = await supabase.from('predictions').insert([{
         user_tg_id: tgId,
         match_name: matchStr,
-        team_picked: savedTeam,
-        amount: savedAmount
+        team_picked: pickedTeam,
+        amount: betAmount 
       }]);
 
-      if (updateError || insertError) {
-        alert("❌ 记账报错: " + (updateError?.message || "") + " | " + (insertError?.message || ""));
+      if (insertError) {
+        alert("❌ 支付已成功（钱已进你口袋），但云端记账失败: " + insertError.message);
       } else {
-        alert(`✅ 预测成功！您已投入 ${savedAmount} 积分支持【${savedTeam}】。收据已存入云端！`);
+        // 既然他花了真金白银，咱们就给他的积分做加法，让他冲榜！
+        const newScore = userScore + betAmount;
+        setUserScore(newScore);
+        await supabase.from('users').update({ score: newScore }).eq('tg_id', tgId);
+
+        alert(`✅ 爆赞！0.01 TON 支付成功！已收到您的真金白银，积分已发放并下注！`);
       }
+      
+      setSelectedMatch(null);
+      setPickedTeam(null);
+    } catch (error) {
+      // 用户点了拒绝，或者余额不足，捕获错误并提示
+      console.error(error);
+      alert("❌ 支付已取消，或钱包余额不足。");
     }
   };
 
@@ -99,7 +124,6 @@ function AppContent() {
         </div>
       </header>
 
-      {/* 用户卡片 */}
       <div className="w-full bg-gradient-to-r from-gray-800 to-gray-800/50 p-5 rounded-2xl border border-gray-700 shadow-xl mb-8 flex justify-between items-center">
          <div>
            <p className="text-gray-400 text-xs mb-1 tracking-wider">云端可用积分</p>
@@ -112,14 +136,11 @@ function AppContent() {
          </div>
       </div>
 
-      {/* 比赛列表 */}
       <div className="w-full flex-1 mb-10">
-        <h2 className="font-bold mb-4 italic text-gray-400">🔥 预测赢大奖</h2>
+        <h2 className="font-bold mb-4 italic text-gray-400">🔥 预测赢大奖 (每次 0.01 TON)</h2>
         <div className="space-y-4">
           {matches.map((match) => (
-            <div key={match.id} 
-                 onClick={() => { setSelectedMatch(match); setPickedTeam(null); }} 
-                 className="bg-gray-800 p-5 rounded-xl border border-gray-700 active:scale-95 transition-all cursor-pointer shadow-md">
+            <div key={match.id} onClick={() => { setSelectedMatch(match); setPickedTeam(null); }} className="bg-gray-800 p-5 rounded-xl border border-gray-700 active:scale-95 transition-all cursor-pointer shadow-md">
               <div className="flex justify-between items-center">
                 <span className="font-bold w-2/5 text-center text-lg">{match.team_a}</span>
                 <span className="text-yellow-500 font-black w-1/5 text-center text-xl">VS</span>
@@ -130,7 +151,6 @@ function AppContent() {
         </div>
       </div>
 
-      {/* 【新魔法】炫酷排行榜 UI */}
       <div className="w-full pb-10">
         <h2 className="font-bold mb-4 italic text-gray-400">🏆 全网财富排行榜</h2>
         <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden shadow-md">
@@ -140,14 +160,8 @@ function AppContent() {
              leaderboard.map((user, index) => (
                <div key={user.id} className="flex justify-between items-center p-4 border-b border-gray-700/50 last:border-0 hover:bg-gray-700/30 transition-colors">
                  <div className="flex items-center space-x-4">
-                   {/* 前三名给特殊颜色 */}
-                   <span className={`font-black w-6 text-center ${index === 0 ? 'text-yellow-400 text-xl' : index === 1 ? 'text-gray-300 text-lg' : index === 2 ? 'text-amber-600 text-lg' : 'text-gray-500'}`}>
-                     #{index + 1}
-                   </span>
-                   {/* 保护隐私，将 TG ID 中间几位打码 */}
-                   <span className="font-mono text-sm text-gray-300">
-                     {user.tg_id.substring(0, 3)}***{user.tg_id.slice(-3)}
-                   </span>
+                   <span className={`font-black w-6 text-center ${index === 0 ? 'text-yellow-400 text-xl' : index === 1 ? 'text-gray-300 text-lg' : index === 2 ? 'text-amber-600 text-lg' : 'text-gray-500'}`}>#{index + 1}</span>
+                   <span className="font-mono text-sm text-gray-300">{user.tg_id.substring(0, 3)}***{user.tg_id.slice(-3)}</span>
                  </div>
                  <span className="text-yellow-400 font-bold">{user.score}</span>
                </div>
@@ -156,7 +170,6 @@ function AppContent() {
         </div>
       </div>
 
-      {/* 下注弹窗保持不变 */}
       {selectedMatch && (
         <div className="fixed inset-0 bg-black/80 flex flex-col justify-end z-50">
           <div className="flex-1" onClick={() => setSelectedMatch(null)}></div>
@@ -167,10 +180,11 @@ function AppContent() {
               <button onClick={() => setPickedTeam(selectedMatch.team_b)} className={`flex-1 py-3 rounded-xl font-bold transition-all ${pickedTeam === selectedMatch.team_b ? 'bg-red-600 text-white border-2 border-red-400' : 'bg-gray-700 text-gray-400 border-2 border-transparent'}`}>{selectedMatch.team_b}</button>
             </div>
             <div className="mb-8">
-              <div className="flex justify-between text-gray-400 mb-2"><span>投入积分</span><span className="text-yellow-400 font-bold">{betAmount} $GOAL</span></div>
+              <div className="flex justify-between text-gray-400 mb-2"><span>兑换积分池</span><span className="text-yellow-400 font-bold">{betAmount} $GOAL</span></div>
               <input type="range" min="10" max="500" step="10" value={betAmount} onChange={(e) => setBetAmount(parseInt(e.target.value))} className="w-full accent-yellow-400"/>
+              <p className="text-center text-xs text-red-400 mt-4">⚠️ 提示：点击确认将唤起钱包，真实扣除 0.01 TON</p>
             </div>
-            <button onClick={handlePlaceBet} className={`w-full py-4 rounded-2xl font-black text-lg transition-all ${pickedTeam ? 'bg-yellow-400 text-black active:scale-95' : 'bg-gray-600 text-gray-400 cursor-not-allowed'}`}>{pickedTeam ? `确认支持 ${pickedTeam}` : '请先选择队伍'}</button>
+            <button onClick={handlePlaceBet} className={`w-full py-4 rounded-2xl font-black text-lg transition-all ${pickedTeam ? 'bg-yellow-400 text-black active:scale-95' : 'bg-gray-600 text-gray-400 cursor-not-allowed'}`}>{pickedTeam ? `支付 0.01 TON 支持 ${pickedTeam}` : '请先选择队伍'}</button>
           </div>
         </div>
       )}
