@@ -2,12 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '../utils/supabase'; 
-// 1. 【新增引入】从插件库中拿出真正的发钞机 useTonConnectUI
 import { TonConnectUIProvider, TonConnectButton, useTonAddress, useTonConnectUI } from '@tonconnect/ui-react';
 
 function AppContent() {
   const address = useTonAddress(); 
-  // 2. 【新增魔法】激活发钞机
   const [tonConnectUI] = useTonConnectUI();
   
   const [tgUser, setTgUser] = useState(null);
@@ -55,39 +53,48 @@ function AppContent() {
     initData();
   }, []);
 
-  // 3. 【核心换血】接通真金白银的支付网关
+  // 【核心功能】一键唤起 Telegram 原生分享菜单
+  const handleShare = () => {
+    const shareText = "🔥 我正在 TONStriker 预测比赛赚取真金白银！胜率极高，快来和我一起瓜分巨额奖池！";
+    // ⚠️ TODO: 等你发给我机器人的链接后，可以在这里把它换成真实的
+    const botUrl = "https://t.me/your_bot_name/app"; 
+    
+    const tgShareUrl = `https://t.me/share/url?url=${encodeURIComponent(botUrl)}&text=${encodeURIComponent(shareText)}`;
+
+    if (typeof window !== 'undefined') {
+      try {
+        const WebApp = require('@twa-dev/sdk').default;
+        WebApp.openTelegramLink(tgShareUrl);
+      } catch (e) {
+        window.open(tgShareUrl, '_blank');
+      }
+    }
+  };
+
+  // 【核心功能】真实支付与记账
   const handlePlaceBet = async () => {
     if (!pickedTeam) return alert("请先选择您要支持的队伍！");
-    // 如果没连钱包，直接拦住！
     if (!address) return alert("❌ 请先在页面右上角连接 TON 钱包！");
 
-    // 【安全锁】强制固定支付金额为 0.01 TON，转换成区块链识别的 nanoTON
     const testAmountTON = 0.01;
     const nanoTON = (testAmountTON * 1000000000).toString(); 
 
-    // 构建一份发给区块链的“真实付款账单”
     const transaction = {
-      validUntil: Math.floor(Date.now() / 1000) + 360, // 账单 6 分钟内有效
+      validUntil: Math.floor(Date.now() / 1000) + 360, 
       messages: [
         {
-          address: "UQD_BlGWjwMnVqb3jetXwKWy0aWMvNo-Bfm4XbGXQrpK0s7Y", // 你的庄家金库地址！
-          amount: nanoTON // 强制 0.01 TON
+          address: "UQD_BlGWjwMnVqb3jetXwKWy0aWMvNo-Bfm4XbGXQrpK0s7Y", 
+          amount: nanoTON 
         }
       ]
     };
 
     try {
-      // ⚠️ 关键动作：屏幕底部会瞬间弹起用户的钱包，等待真实付款
       await tonConnectUI.sendTransaction(transaction);
-
-      // ==========================================
-      // 只有当用户真的付了钱（交易上链），代码才会走到这里！
-      // ==========================================
       
       const matchStr = `${selectedMatch.team_a} vs ${selectedMatch.team_b}`;
       const tgId = tgUser ? tgUser.id.toString() : 'WalletUser';
 
-      // 记账：为了不破坏咱们的排行榜，数据库里依然存他的虚拟积分
       const { error: insertError } = await supabase.from('predictions').insert([{
         user_tg_id: tgId,
         match_name: matchStr,
@@ -98,18 +105,15 @@ function AppContent() {
       if (insertError) {
         alert("❌ 支付已成功（钱已进你口袋），但云端记账失败: " + insertError.message);
       } else {
-        // 既然他花了真金白银，咱们就给他的积分做加法，让他冲榜！
         const newScore = userScore + betAmount;
         setUserScore(newScore);
         await supabase.from('users').update({ score: newScore }).eq('tg_id', tgId);
-
         alert(`✅ 爆赞！0.01 TON 支付成功！已收到您的真金白银，积分已发放并下注！`);
       }
       
       setSelectedMatch(null);
       setPickedTeam(null);
     } catch (error) {
-      // 用户点了拒绝，或者余额不足，捕获错误并提示
       console.error(error);
       alert("❌ 支付已取消，或钱包余额不足。");
     }
@@ -124,7 +128,7 @@ function AppContent() {
         </div>
       </header>
 
-      <div className="w-full bg-gradient-to-r from-gray-800 to-gray-800/50 p-5 rounded-2xl border border-gray-700 shadow-xl mb-8 flex justify-between items-center">
+      <div className="w-full bg-gradient-to-r from-gray-800 to-gray-800/50 p-5 rounded-2xl border border-gray-700 shadow-xl mb-6 flex justify-between items-center">
          <div>
            <p className="text-gray-400 text-xs mb-1 tracking-wider">云端可用积分</p>
            <p className="text-2xl font-black text-yellow-400">
@@ -134,6 +138,16 @@ function AppContent() {
          <div className="flex items-center space-x-3">
            <span className="text-sm font-bold text-gray-300">{tgUser?.first_name || '访客模式'}</span>
          </div>
+      </div>
+
+      {/* 裂变引擎入口 */}
+      <div className="w-full mb-8">
+        <button 
+          onClick={handleShare}
+          className="w-full bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-500 hover:to-blue-700 text-white font-black text-lg py-4 rounded-2xl shadow-lg transform transition-all active:scale-95 flex items-center justify-center space-x-2"
+        >
+          <span>📢 召唤好友，瓜分奖池！</span>
+        </button>
       </div>
 
       <div className="w-full flex-1 mb-10">
