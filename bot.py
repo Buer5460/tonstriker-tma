@@ -7,7 +7,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 API_TOKEN = '8796959241:AAEutOxD46OnY6AZOpnZoYnTo_drP59GoOA'
 
 # 这是你刚刚通过 Cloudflare 生成的公网内网穿透链接
-WEB_APP_URL = 'https://aims-enquiry-percentage-networks.trycloudflare.com'
+WEB_APP_URL = 'https://tonstriker-tma.vercel.app'
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()

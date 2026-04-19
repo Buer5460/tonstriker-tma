@@ -9,14 +9,15 @@ function AppContent() {
   const [tgUser, setTgUser] = useState(null);
   const [matches, setMatches] = useState([]);
   const [userScore, setUserScore] = useState(0);
+  
   const [selectedMatch, setSelectedMatch] = useState(null);
   const [betAmount, setBetAmount] = useState(10);
+  // 新增：记录用户当前选中了哪个队伍
+  const [pickedTeam, setPickedTeam] = useState(null);
 
   useEffect(() => {
     const initData = async () => {
       let currentUser = null;
-
-      // 1. 获取 Telegram 用户身份
       if (typeof window !== 'undefined') {
         try {
           const WebApp = (await import('@twa-dev/sdk')).default;
@@ -29,56 +30,60 @@ function AppContent() {
         } catch (e) { console.log("非TG环境"); }
       }
 
-      // 2. 云端读档
       if (currentUser) {
         const tgId = currentUser.id.toString();
-        const { data: existingUser, error: fetchError } = await supabase
-          .from('users').select('*').eq('tg_id', tgId).single();
-
+        const { data: existingUser } = await supabase.from('users').select('*').eq('tg_id', tgId).single();
         if (existingUser) {
           setUserScore(existingUser.score);
         } else {
-          const { error: insertError } = await supabase.from('users').insert([{ tg_id: tgId, score: 1000 }]);
-          if (insertError) alert("⚠️ 新建云端账本失败: " + insertError.message);
+          await supabase.from('users').insert([{ tg_id: tgId, score: 1000 }]);
           setUserScore(1000);
         }
       } else {
          setUserScore(1000);
       }
 
-      // 3. 获取比赛列表
       const { data: matchData } = await supabase.from('matches').select('*');
       if (matchData) setMatches(matchData);
     };
-
     initData();
   }, []);
 
-  // 4. 【核心魔法】带报警的真实扣分逻辑
+  // 【核心升级】扣分 + 开收据的组合拳
   const handlePlaceBet = async () => {
+    if (!pickedTeam) return alert("请先选择您要支持的队伍！");
     if (userScore < betAmount) return alert("积分不足！");
 
     const newScore = userScore - betAmount;
     
-    // 第一步：画面先扣，保证丝滑
+    // 1. 乐观更新画面
     setUserScore(newScore);
+    const matchStr = `${selectedMatch.team_a} vs ${selectedMatch.team_b}`;
+    const savedTeam = pickedTeam; // 临时存一下，因为马上要清空弹窗了
+    const savedAmount = betAmount;
+    
     setSelectedMatch(null); 
+    setPickedTeam(null);
 
-    // 第二步：真实写入数据库并汇报结果
     if (tgUser) {
       const tgId = tgUser.id.toString();
-      const { error } = await supabase.from('users').update({ score: newScore }).eq('tg_id', tgId);
       
-      if (error) {
-        // 如果数据库报错，直接弹窗显示红字
-        alert("❌ 数据库写入失败: " + error.message);
+      // 2. 真实扣除数据库的钱
+      const { error: updateError } = await supabase.from('users').update({ score: newScore }).eq('tg_id', tgId);
+      
+      // 3. 【新魔法】向数据库写入一张“收据”
+      const { error: insertError } = await supabase.from('predictions').insert([{
+        user_tg_id: tgId,
+        match_name: matchStr,
+        team_picked: savedTeam,
+        amount: savedAmount
+      }]);
+
+      if (updateError || insertError) {
+        alert("❌ 记账失败，请联系客服。");
       } else {
-        // 如果成功，弹出绿字
-        alert(`✅ 预测成功！云端账本已真实更新，当前余额 ${newScore}。现在您可以随便刷新测试了！`);
+        alert(`✅ 预测成功！您已投入 ${savedAmount} 积分支持【${savedTeam}】。收据已存入云端！`);
       }
-    } else {
-      // 提醒你没在 TG 里
-      alert("⚠️ 测试提示：您目前不在 Telegram 软件内，系统获取不到身份，积分仅在本地测试，刷新后不保存。");
     }
   };
 
@@ -107,7 +112,9 @@ function AppContent() {
         <h2 className="font-bold mb-4 italic text-gray-400">🔥 预测赢大奖</h2>
         <div className="space-y-4">
           {matches.map((match) => (
-            <div key={match.id} onClick={() => setSelectedMatch(match)} className="bg-gray-800 p-5 rounded-xl border border-gray-700 active:scale-95 transition-all cursor-pointer shadow-md">
+            <div key={match.id} 
+                 onClick={() => { setSelectedMatch(match); setPickedTeam(null); }} 
+                 className="bg-gray-800 p-5 rounded-xl border border-gray-700 active:scale-95 transition-all cursor-pointer shadow-md">
               <div className="flex justify-between items-center">
                 <span className="font-bold w-2/5 text-center text-lg">{match.team_a}</span>
                 <span className="text-yellow-500 font-black w-1/5 text-center text-xl">VS</span>
@@ -122,7 +129,22 @@ function AppContent() {
         <div className="fixed inset-0 bg-black/80 flex flex-col justify-end z-50">
           <div className="flex-1" onClick={() => setSelectedMatch(null)}></div>
           <div className="bg-gray-800 rounded-t-3xl p-8 border-t-2 border-yellow-500/50">
-            <h3 className="text-xl font-bold text-center mb-6">预测：{selectedMatch.team_a} vs {selectedMatch.team_b}</h3>
+            <h3 className="text-xl font-bold text-center mb-4 text-gray-300">请选择支持队伍</h3>
+            
+            {/* 新增的二选一球队按钮 */}
+            <div className="flex space-x-4 mb-6">
+              <button 
+                onClick={() => setPickedTeam(selectedMatch.team_a)}
+                className={`flex-1 py-3 rounded-xl font-bold transition-all ${pickedTeam === selectedMatch.team_a ? 'bg-blue-600 text-white border-2 border-blue-400' : 'bg-gray-700 text-gray-400 border-2 border-transparent'}`}>
+                {selectedMatch.team_a}
+              </button>
+              <button 
+                onClick={() => setPickedTeam(selectedMatch.team_b)}
+                className={`flex-1 py-3 rounded-xl font-bold transition-all ${pickedTeam === selectedMatch.team_b ? 'bg-red-600 text-white border-2 border-red-400' : 'bg-gray-700 text-gray-400 border-2 border-transparent'}`}>
+                {selectedMatch.team_b}
+              </button>
+            </div>
+
             <div className="mb-8">
               <div className="flex justify-between text-gray-400 mb-2">
                 <span>投入积分</span>
@@ -130,7 +152,12 @@ function AppContent() {
               </div>
               <input type="range" min="10" max="500" step="10" value={betAmount} onChange={(e) => setBetAmount(parseInt(e.target.value))} className="w-full accent-yellow-400"/>
             </div>
-            <button onClick={handlePlaceBet} className="w-full py-4 bg-yellow-400 text-black rounded-2xl font-black text-lg">确认预测</button>
+            
+            <button 
+              onClick={handlePlaceBet} 
+              className={`w-full py-4 rounded-2xl font-black text-lg transition-all ${pickedTeam ? 'bg-yellow-400 text-black active:scale-95' : 'bg-gray-600 text-gray-400 cursor-not-allowed'}`}>
+              {pickedTeam ? `确认支持 ${pickedTeam}` : '请先选择队伍'}
+            </button>
           </div>
         </div>
       )}
@@ -141,7 +168,7 @@ function AppContent() {
 export default function Home() {
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => setIsMounted(true), []);
-  if (!isMounted) return <main className="min-h-screen bg-gray-900 flex items-center justify-center"><p className="text-yellow-400">Loading App...</p></main>;
+  if (!isMounted) return null;
 
   return (
     <TonConnectUIProvider manifestUrl="https://ton-connect.github.io/demo-dapp-with-react-ui/tonconnect-manifest.json">
