@@ -80,7 +80,8 @@ function AppContent() {
       }]);
 
       if (updateError || insertError) {
-        alert("❌ 记账失败，请联系客服。");
+        // 让系统直接把底层的英文报错弹出来，方便我们抓虫
+        alert("❌ 记账报错: " + (updateError?.message || "") + " | " + (insertError?.message || ""));
       } else {
         alert(`✅ 预测成功！您已投入 ${savedAmount} 积分支持【${savedTeam}】。收据已存入云端！`);
       }
