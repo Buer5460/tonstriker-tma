@@ -63,26 +63,49 @@ export default function AdminDashboard() {
     setLoading(false);
   };
 
-  // 🕷️ 核心：懂球帝一键抓取逻辑（调用你的私有 API 节点）
+  // 🕷️ 核心：懂球帝一键抓取引擎 (真实 DOM 解析版)
   const handleScrapeDongqiudi = async () => {
     setIsScraping(true);
     try {
-      // 关键改动：不再求助于不稳定的公共代理，而是访问我们自己的后端
       const response = await fetch('/api/scrape');
       const data = await response.json();
 
       if (data.error) throw new Error(data.error);
 
-      // 拿到 HTML 后，这里展示我们解析好的江苏超级联赛（模拟）赛程
-      // 未来我们将在这里加入正则解析，直接把 data.html 里的文字抠出来
-      const mockParsedMatches = [
-        { teamA: "南京城市", teamB: "苏州东吴", time: "2026-04-25T19:30:00" },
-        { teamA: "无锡吴钩", teamB: "南通支云", time: "2026-04-26T15:00:00" },
-        { teamA: "扬州队", teamB: "常州队", time: "2026-04-27T20:00:00" }
-      ];
+      // 🧠 真实解析逻辑：使用浏览器的 DOMParser 分析懂球帝的 HTML 代码
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(data.html, 'text/html');
 
-      setScrapedMatches(mockParsedMatches);
-      alert(`✅ 防火墙突破成功！已准备好 ${mockParsedMatches.length} 场待确认赛事。`);
+      // 智能提取：寻找网页里所有带有队伍名称特征的标签
+      // 注意：懂球帝的移动端经常使用 class="team-name" 或类似类名
+      const teamElements = doc.querySelectorAll('.team-name, .name, p.team');
+      const extractedMatches = [];
+
+      // 假设懂球帝的对阵列表里，每两个相邻的队伍名字就是一场比赛的主客队
+      for (let i = 0; i < teamElements.length; i += 2) {
+        if (teamElements[i] && teamElements[i+1]) {
+          const teamA = teamElements[i].innerText.trim();
+          const teamB = teamElements[i+1].innerText.trim();
+          
+          // 剔除掉抓取到的空字符串或无效广告标签
+          if (teamA && teamB) {
+            extractedMatches.push({
+              teamA: teamA,
+              teamB: teamB,
+              // 开赛时间解析较为复杂且容易变动，这里默认帮您设置为抓取后的次日晚 20:00，您可以在入库前手动微调
+              time: new Date(Date.now() + 86400000).toISOString().slice(0, 11) + "20:00:00"
+            });
+          }
+        }
+      }
+
+      if (extractedMatches.length > 0) {
+        // 解析成功，替换掉原来的 mock 数据，展示真实的提取结果
+        setScrapedMatches(extractedMatches);
+        alert(`✅ 抓取并解析成功！共从懂球帝底层代码中提取出 ${extractedMatches.length} 场真实对阵。`);
+      } else {
+        alert("⚠️ 成功穿透了防火墙，但未能在页面中匹配到队伍列表。可能是今天没有比赛，或者懂球帝更新了网页结构。");
+      }
 
     } catch (err) {
       console.error(err);
