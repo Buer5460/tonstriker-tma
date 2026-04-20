@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../utils/supabase'; 
 import { TonConnectUIProvider, TonConnectButton, useTonAddress, useTonConnectUI } from '@tonconnect/ui-react';
+// 🚀 引入 Vercel 行为追踪雷达
+import { track } from '@vercel/analytics';
 
 function AppContent() {
   const address = useTonAddress(); 
@@ -12,7 +14,7 @@ function AppContent() {
   const [matches, setMatches] = useState([]);
   const [userScore, setUserScore] = useState(0);
   const [selectedMatch, setSelectedMatch] = useState(null);
-  const [betAmount, setBetAmount] = useState(10); // 🚀 初始投注额
+  const [betAmount, setBetAmount] = useState(10); 
   const [pickedTeam, setPickedTeam] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
   
@@ -109,6 +111,9 @@ function AppContent() {
   };
 
   const handleShare = () => {
+    // 📍 埋点：监控裂变按钮点击率
+    track('Click_Share_Button');
+
     const myId = tgUser?.id || "";
     const shareText = `🔥 江苏超级联赛开战！注册领200积分，支持主队瓜分90%奖池！加入频道获取密报：${CHANNEL_URL}`;
     const botUrl = `https://t.me/TONStriker2026_bot/play?startapp=${myId}`; 
@@ -122,6 +127,9 @@ function AppContent() {
   };
 
   const handleWithdrawSubmit = async () => {
+    // 📍 埋点：监控提现尝试与金额
+    track('Submit_Withdraw', { amount: withdrawAmount });
+
     if (!address) return alert("❌ 请连接钱包");
     const amount = parseInt(withdrawAmount);
     if (!amount || amount < 500) return alert("最低500");
@@ -135,6 +143,9 @@ function AppContent() {
   };
 
   const handlePlaceBet = async () => {
+    // 📍 埋点：监控下注流向与资金量
+    track('Place_Bet', { team: pickedTeam, amount: betAmount });
+
     if (isMatchLocked(selectedMatch.match_time)) return alert("❌ 已封盘");
     if (!pickedTeam || !address) return alert("请选队并连钱包");
     if (betAmount > userScore) return alert("积分不足");
@@ -147,12 +158,12 @@ function AppContent() {
       const matchStr = `${selectedMatch.team_a} vs ${selectedMatch.team_b}`;
       const tgId = tgUser ? tgUser.id.toString() : 'WalletUser';
       await supabase.from('predictions').insert([{ user_tg_id: tgId, match_name: matchStr, team_picked: pickedTeam, amount: betAmount }]);
-      const newScore = userScore - betAmount + betAmount; // 这里逻辑是先扣再加，实际上是积分投注，TON只是门票
+      const newScore = userScore - betAmount + betAmount; 
       setUserScore(newScore);
       await supabase.from('users').update({ score: newScore }).eq('tg_id', tgId);
       alert(`✅ 预测成功！下注额: ${betAmount}`);
       setSelectedMatch(null);
-      setBetAmount(10); // 重置
+      setBetAmount(10); 
     } catch (error) { alert("❌ 支付失败"); }
   };
 
@@ -272,7 +283,6 @@ function AppContent() {
               <button onClick={() => setPickedTeam(selectedMatch.team_b)} className={`flex-1 py-6 rounded-3xl font-black transition-all ${pickedTeam === selectedMatch.team_b ? 'bg-red-600 text-white ring-4 ring-red-500/30 scale-105' : 'bg-slate-800 text-slate-600'}`}>{selectedMatch.team_b}</button>
             </div>
 
-            {/* 🚀 核心：滑动条模块 */}
             <div className="bg-slate-950 p-6 rounded-3xl mb-10 border border-slate-800">
                <div className="flex justify-between items-center mb-4">
                  <span className="text-xs font-bold text-slate-500">投注积分</span>
