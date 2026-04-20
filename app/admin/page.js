@@ -18,7 +18,7 @@ export default function AdminDashboard() {
 
   const [withdrawals, setWithdrawals] = useState([]);
 
-  const BOT_TOKEN = "8796959241:AAEutOxD46OnY6AZOpnZoYnTo_drP59GoOA";
+  const BOT_TOKEN = "8796959241:AAHfPz95fOoanR7iAJLuTat2kGfKDggtViE";
   const APP_URL = "https://t.me/TONStriker2026_bot/play";
 
   const handleLogin = (e) => {
