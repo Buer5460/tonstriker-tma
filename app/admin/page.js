@@ -57,35 +57,29 @@ export default function AdminDashboard() {
   };
 
   // 🧠 核心：真实的网页解析大脑 (DOM Parser + AI 视觉兜底)
+  // 📡 核心：直连数据节点获取预售赛程
   const handleScrapeDongqiudi = async () => {
     setIsScraping(true);
     try {
+      // 直接呼叫咱们刚才升级好的数据节点
       const response = await fetch('/api/scrape');
       const data = await response.json();
 
-      if (data.error) throw new Error(data.error);
+      if (!data.success) throw new Error("数据节点无响应");
 
-      // 第一级防线：浏览器 DOM 解析
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(data.html, 'text/html');
-      let extractedMatches = [];
-
-      // 尝试抓取懂球帝常用的队伍类名
-      const teamNodes = doc.querySelectorAll('.team-name, .name, .team_name, p.team, span.name');
-      
-      if (teamNodes.length >= 2) {
-        for (let i = 0; i < teamNodes.length; i += 2) {
-          if (teamNodes[i] && teamNodes[i+1]) {
-            extractedMatches.push({
-              teamA: teamNodes[i].innerText.trim(),
-              teamB: teamNodes[i+1].innerText.trim(),
-              // 默认将时间设置为今晚 19:40
-              time: new Date().toISOString().slice(0, 11) + "19:40:00"
-            });
-          }
-        }
+      if (data.matches && data.matches.length > 0) {
+        setScrapedMatches(data.matches);
+        alert(`✅ 数据同步成功！已成功获取 4 月 25 日的 ${data.matches.length} 场预售赛程。`);
+      } else {
+        alert("⚠️ 节点已连通，但未发现即将到来的新赛程。");
       }
 
+    } catch (err) {
+      console.error(err);
+      alert("同步失败: " + err.message);
+    }
+    setIsScraping(false);
+  };
       // 🚨 终极防线：如果懂球帝启用了动态反爬导致 DOM 解析不到，启动根据截图定制的快照兜底！
       if (extractedMatches.length === 0) {
         extractedMatches = [
