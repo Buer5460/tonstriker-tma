@@ -16,7 +16,6 @@ export default function AdminDashboard() {
   const [scrapedMatches, setScrapedMatches] = useState([]);
   const [isScraping, setIsScraping] = useState(false);
 
-  // ⚠️ 提现记录状态
   const [withdrawals, setWithdrawals] = useState([]);
 
   const BOT_TOKEN = "8796959241:AAEutOxD46OnY6AZOpnZoYnTo_drP59GoOA";
@@ -27,7 +26,7 @@ export default function AdminDashboard() {
     if (password === '888888') {
       setIsAuthenticated(true);
       fetchPredictions();
-      fetchWithdrawals(); // 登录时顺便拉取提现列表
+      fetchWithdrawals(); 
     } else {
       alert('❌ 密码错误！');
       setPassword('');
@@ -39,7 +38,6 @@ export default function AdminDashboard() {
     if (data) setPredictions(data);
   };
 
-  // 获取所有提现申请
   const fetchWithdrawals = async () => {
     const { data } = await supabase.from('withdrawals').select('*').order('created_at', { ascending: false });
     if (data) setWithdrawals(data);
@@ -81,7 +79,7 @@ export default function AdminDashboard() {
     setIsScraping(false);
   };
 
-  // 💰 核心商业升级：10% 抽水 + 比例分红
+  // 💰 核心商业升级：10% 抽水 + 比例分红 + 静默报错拦截
   const handleSettle = async (matchName, winningTeam) => {
     const confirmSettle = confirm(`确认【${winningTeam}】获胜？全网结算开始，操作不可逆！`);
     if (!confirmSettle) return;
@@ -91,19 +89,15 @@ export default function AdminDashboard() {
     const winners = matchBets.filter(p => p.team_picked === winningTeam);
     const losers = matchBets.filter(p => p.team_picked !== winningTeam);
     
-    // 计算输家总池和赢家总本金
     const totalLoserPool = losers.reduce((sum, bet) => sum + bet.amount, 0);
     const totalWinnerPrincipal = winners.reduce((sum, bet) => sum + bet.amount, 0);
 
-    // 🏆 平台抽水逻辑：收取输家总池 10% 的服务费
     const platformFee = Math.floor(totalLoserPool * 0.1);
-    // 剩下的 90% 用于分配给赢家
     const distributablePool = totalLoserPool - platformFee;
 
     let logs = `📊 结算报告：\n总奖池: ${totalLoserPool}\n平台服务费(10%): ${platformFee}\n分红池: ${distributablePool}\n\n`;
 
     for (const winner of winners) {
-      // 按照投入本金的比例，瓜分剩下的分红池
       let profit = totalWinnerPrincipal > 0 ? Math.floor((winner.amount / totalWinnerPrincipal) * distributablePool) : 0;
       const totalPayout = winner.amount + profit;
 
@@ -112,15 +106,16 @@ export default function AdminDashboard() {
         await supabase.from('users').update({ score: userData.score + totalPayout }).eq('tg_id', winner.user_tg_id);
         
         if (winner.user_tg_id !== 'WalletUser') {
+          // 💡 修复：加入了 .catch 静默拦截，防止机器人未激活导致的弹窗报错
           fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               chat_id: winner.user_tg_id,
               text: `🎉 恭喜！您支持的【${winningTeam}】赢了！\n💰 平台已扣除 10% 服务费，为您派发 ${totalPayout} $GOAL 奖金！`,
-              reply_markup: { inline_keyboard: [[{ text: "🚀 立即查看", url: APP_URL }]] }
+              reply_markup: { inline_keyboard: [[{ text: "🚀 立即查看余额与排行榜", url: APP_URL }]] }
             })
-          });
+          }).catch(e => console.log("静默处理：该用户未激活Bot或环境异常，不发送通知消息"));
         }
       }
       await supabase.from('predictions').delete().eq('id', winner.id);
@@ -132,7 +127,6 @@ export default function AdminDashboard() {
     setLoading(false);
   };
 
-  // 处理提现请求（标记为已打款）
   const handleCompleteWithdrawal = async (id) => {
     if (!confirm("确认您已在链上完成转账？点击确认将更改订单状态。")) return;
     await supabase.from('withdrawals').update({ status: 'completed' }).eq('id', id);
@@ -212,7 +206,6 @@ export default function AdminDashboard() {
         })}
       </div>
 
-      {/* 新增：玩家提现请求列表 */}
       <h2 className="text-2xl font-black mb-6 text-amber-400 italic">🏦 玩家提现审批大厅</h2>
       <div className="bg-gray-800 rounded-xl border border-amber-900/50 overflow-hidden">
         {withdrawals.length === 0 ? <p className="p-6 text-gray-500 text-center">暂无玩家发起提现请求。</p> : (
