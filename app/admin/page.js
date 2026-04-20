@@ -9,7 +9,12 @@ export default function AdminDashboard() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [password, setPassword] = useState('');
 
-  // ⚠️ 你的专属兵符与包厢链接已就位
+  // 新增：发牌器状态
+  const [newTeamA, setNewTeamA] = useState('');
+  const [newTeamB, setNewTeamB] = useState('');
+  const [newMatchTime, setNewMatchTime] = useState('');
+
+  // 你的专属兵符与包厢链接
   const BOT_TOKEN = "8796959241:AAEutOxD46OnY6AZOpnZoYnTo_drP59GoOA";
   const APP_URL = "https://t.me/TONStriker2026_bot/play";
 
@@ -27,6 +32,32 @@ export default function AdminDashboard() {
   const fetchPredictions = async () => {
     const { data } = await supabase.from('predictions').select('*');
     if (data) setPredictions(data);
+  };
+
+  // 【核心功能】一键发布新赛事到 Supabase
+  const handleAddMatch = async (e) => {
+    e.preventDefault();
+    if (!newTeamA || !newTeamB || !newMatchTime) return alert("请填写完整的比赛队伍和开赛时间！");
+
+    setLoading(true);
+    // 自动将你选择的本地时间转换为标准的国际时间戳存入数据库
+    const matchTimeISO = new Date(newMatchTime).toISOString();
+
+    const { error } = await supabase.from('matches').insert([{
+      team_a: newTeamA,
+      team_b: newTeamB,
+      match_time: matchTimeISO
+    }]);
+
+    if (error) {
+      alert("❌ 发布失败: " + error.message);
+    } else {
+      alert(`✅ 【${newTeamA} vs ${newTeamB}】已成功发布到全网！`);
+      setNewTeamA('');
+      setNewTeamB('');
+      setNewMatchTime('');
+    }
+    setLoading(false);
   };
 
   const handleSettle = async (matchName, winningTeam) => {
@@ -57,9 +88,8 @@ export default function AdminDashboard() {
         await supabase.from('users').update({ score: newScore }).eq('tg_id', winner.user_tg_id);
         logs += `TG用户 ${winner.user_tg_id} 赢回 ${totalPayout} 分\n`;
 
-        // 【新魔法】调用 Telegram API 发送全自动私信
         if (winner.user_tg_id !== 'WalletUser') {
-          const messageText = `🎉 恭喜！您支持的【${winningTeam}】赢得了比赛！\n\n💰 庄家已为您派发 ${totalPayout} $GOAL 奖金（包含本金与利润）。\n\n🏆 快来看看您是否登顶了全网财富排行榜！`;
+          const messageText = `🎉 恭喜！您支持的【${winningTeam}】赢得了比赛！\n\n💰 庄家已为您派发 ${totalPayout} $GOAL 奖金。\n\n🏆 快来看看您是否登顶了全网财富排行榜！`;
           
           try {
             await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
@@ -109,9 +139,24 @@ export default function AdminDashboard() {
 
   return (
     <main className="p-8 bg-gray-900 min-h-screen text-white">
-      <h1 className="text-3xl font-black text-red-500 mb-8 flex items-center">👁️ 上帝视角：庄家结算中心</h1>
+      <h1 className="text-3xl font-black text-red-500 mb-8 flex items-center">👁️ 庄家控制中心</h1>
+
+      {/* 🚀 新增：动态发牌器界面 */}
+      <div className="bg-gray-800 p-6 rounded-xl border border-blue-900/50 shadow-xl mb-10">
+        <h2 className="text-xl font-bold mb-4 text-blue-400">➕ 动态发牌器 (一键发布新赛程)</h2>
+        <form onSubmit={handleAddMatch} className="flex flex-col md:flex-row space-y-4 md:space-y-0 md:space-x-4">
+          <input type="text" placeholder="主队 (如: 南京队)" value={newTeamA} onChange={(e) => setNewTeamA(e.target.value)} className="flex-1 bg-gray-900 border border-gray-700 rounded p-3 text-white focus:border-blue-500 outline-none"/>
+          <span className="text-yellow-500 font-black self-center">VS</span>
+          <input type="text" placeholder="客队 (如: 苏州队)" value={newTeamB} onChange={(e) => setNewTeamB(e.target.value)} className="flex-1 bg-gray-900 border border-gray-700 rounded p-3 text-white focus:border-blue-500 outline-none"/>
+          <input type="datetime-local" value={newMatchTime} onChange={(e) => setNewMatchTime(e.target.value)} className="flex-1 bg-gray-900 border border-gray-700 rounded p-3 text-white focus:border-blue-500 outline-none"/>
+          <button type="submit" disabled={loading} className="bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded transition-all active:scale-95 shadow-lg">🚀 全网发布</button>
+        </form>
+      </div>
+
+      {/* 原有的待结算模块 */}
+      <h2 className="text-xl font-bold mb-4 text-gray-400">💰 待结算账单</h2>
       {predictions.length === 0 ? (
-        <p className="text-gray-400">目前没有任何用户的下注记录。</p>
+        <p className="text-gray-500 border border-gray-800 p-6 rounded-xl">目前没有任何用户的下注记录。</p>
       ) : (
         <div className="space-y-8">
           {matches.map(matchName => {
