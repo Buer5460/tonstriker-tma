@@ -1,4 +1,3 @@
-import { Analytics } from '@vercel/analytics/react';
 import './globals.css';
 
 export const metadata = {
@@ -11,8 +10,6 @@ export default function RootLayout({ children }) {
     <html lang="zh">
       <body>
         {children}
-        {/* 🚀 注入全局流量雷达 */}
-        <Analytics />
       </body>
     </html>
   );
